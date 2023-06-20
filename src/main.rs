@@ -20,9 +20,9 @@ const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	onl
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// File input : a file containing one URL per line
+    /// File input : a file containing one URL per line. If not set urls are read from STDIN.
     #[arg(short, long)]
-    input: String,
+    input: Option<String>,
     /// Number of workers
     #[arg(short, long, default_value_t = 5)]
     workers: usize,
@@ -46,7 +46,6 @@ enum Errors {
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let workers = args.workers;
-    let input = args.input;
     let output_directory = PathBuf::from(args.output_dir);
     let check_validity = !args.nocheck;
 
@@ -59,39 +58,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tokio::fs::create_dir_all(&output_directory).await?;
 
-    let lines = read_lines(&input).await?;
-    let stream = LinesStream::new(lines);
-
-    let fetches = stream
-        .map(|line| {
-            let output_directory = output_directory.clone();
-            async move {
-                if let Ok(line) = line {
-                    if !line.is_empty() {
-                        let url: Url = Url::parse(&line)?;
-                        let url_path = url
-                            .path_segments()
-                            .ok_or(Errors::MissingPath(line.clone()))?;
-
-                        let filename = url_path
-                            .last()
-                            .and_then(|path| if path.is_empty() { None } else { Some(path) })
-                            .map(sanitize_filename::sanitize)
-                            .map(|filename| output_directory.join(filename))
-                            .ok_or(Errors::MissingPath(line.clone()))?;
-
-                        download(&line, filename, check_validity).await?;
-                    }
-                }
-                Ok(())
-            }
-        })
-        .buffer_unordered(workers)
-        .collect::<Vec<Result<(), Box<dyn Error>>>>();
-
-    for elem in fetches.await {
-        if let Err(error) = elem {
-            error!("{}", error)
+    match args.input {
+        None => {
+            info!("reading data from stdin");
+            let stdin = tokio::io::stdin();
+            let reader = tokio::io::BufReader::new(stdin);
+            process(LinesStream::new(reader.lines()), output_directory, workers, check_validity).await;
+        }
+        Some(file) => {
+            let lines = read_lines(&file).await?;
+            process(LinesStream::new(lines), output_directory, workers, check_validity).await;
         }
     }
 
@@ -139,4 +115,44 @@ async fn download(url: &str, file_path: PathBuf, check_file: bool) -> Result<(),
     let mut content = Cursor::new(response.bytes().await?);
     tokio::io::copy(&mut content, &mut file).await?;
     Ok(())
+}
+
+async fn process<T: tokio_stream::Stream<Item = Result<String, std::io::Error>>>(
+    stream: T,
+    output_directory: PathBuf,
+    workers: usize,
+    check_validity: bool
+) -> () {
+    let fetches = stream
+    .map(|line| {
+        let output_directory = output_directory.clone();
+        async move {
+            if let Ok(line) = line {
+                if !line.is_empty() {
+                    let url: Url = Url::parse(&line)?;
+                    let url_path = url
+                        .path_segments()
+                        .ok_or(Errors::MissingPath(line.clone()))?;
+
+                    let filename = url_path
+                        .last()
+                        .and_then(|path| if path.is_empty() { None } else { Some(path) })
+                        .map(sanitize_filename::sanitize)
+                        .map(|filename| output_directory.join(filename))
+                        .ok_or(Errors::MissingPath(line.clone()))?;
+
+                    download(&line, filename, check_validity).await?;
+                }
+            }
+            Ok(())
+        }
+    })
+    .buffer_unordered(workers)
+    .collect::<Vec<Result<(), Box<dyn Error>>>>();
+
+for elem in fetches.await {
+    if let Err(error) = elem {
+        error!("{}", error)
+    }
+}
 }
