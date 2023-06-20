@@ -1,15 +1,20 @@
-use std::error::Error;
-use std::io::Cursor;
-use std::path::PathBuf;
 use clap::Parser;
 use env_logger::{Builder, WriteStyle};
 use futures::StreamExt;
-use log::{error,info, LevelFilter};
-use reqwest::Url;
+use log::{error, info, LevelFilter};
+use reqwest::header::HeaderMap;
+use reqwest::{Client, Url};
+use std::error::Error;
+use std::io::Cursor;
+use std::path::PathBuf;
 use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 use tokio_stream::wrappers::LinesStream;
+
+// Selon les version de KBART il y a deux types de header possible
+const KBART_HEADER : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type	date_monograph_published_print	date_monograph_published_online	monograph_volume	monograph_edition	first_editor	parent_publication_title_id	preceding_publication_title_id	access_type";
+const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type	date_monograph_published_print	date_monograph_published_online	monograph_volume	monograph_edition	first_editor	parent_publication_title_id	preceding_publication_title_id	access_type";
 
 /// 🥓 KBART File harverster
 #[derive(Parser, Debug)]
@@ -24,12 +29,17 @@ struct Args {
     /// Output directory
     #[arg(short, long)]
     output_dir: String,
+    /// Dont check kbart file validity
+    #[arg(short,long, default_value_t = false)]
+    nocheck: bool
 }
 
 #[derive(Error, Debug)]
 enum Errors {
     #[error("The URL must have a path. The last path part is used to name the file (after sanitization)")]
     MissingPath(String),
+    #[error("The kbart file must have a valid header")]
+    InvalidKbartFile,
 }
 
 #[tokio::main]
@@ -38,6 +48,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let workers = args.workers;
     let input = args.input;
     let output_directory = PathBuf::from(args.output_dir);
+    let check_validity = !args.nocheck;
 
     let mut builder = Builder::new();
 
@@ -69,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             .map(|filename| output_directory.join(filename))
                             .ok_or(Errors::MissingPath(line.clone()))?;
 
-                        download(&line, filename).await?;
+                        download(&line, filename, check_validity).await?;
                     }
                 }
                 Ok(())
@@ -79,7 +90,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .collect::<Vec<Result<(), Box<dyn Error>>>>();
 
     for elem in fetches.await {
-        if let Err(error) = elem { error!("{}", error) }
+        if let Err(error) = elem {
+            error!("{}", error)
+        }
     }
 
     Ok(())
@@ -92,7 +105,34 @@ async fn read_lines(
     Ok(tokio::io::BufReader::new(file).lines())
 }
 
-async fn download(url: &str, file_path: PathBuf) -> Result<(), Box<dyn Error>> {
+async fn check_header(url: &str) -> Result<(), Box<dyn Error>> {
+    info!("checking kbart header of {}", url);
+    let mut headers = HeaderMap::new();
+    headers.append(
+        "Range",
+        format!("bytes=0-{}", KBART_HEADER_5321.as_bytes().len() ).parse()?,
+    );
+
+    let request = Client::new().get(url).headers(headers).build()?;
+
+    let response = Client::new().execute(request).await?.text().await?;
+
+    // Si le serveur ne supporte pas le byte range il retourne l'intégralité du document.
+    // On vérifie donc que le header est présent avec starts_with et non avec une égalité parfaite.
+    if !response.starts_with(KBART_HEADER) && !response.starts_with(KBART_HEADER_5321) {
+        println!("{:?}", response);
+        error!("{} has an invalid kbart header", url);
+        Err(Errors::InvalidKbartFile.into())
+    } else {
+        Ok(())
+    }
+}
+
+async fn download(url: &str, file_path: PathBuf, check_file: bool) -> Result<(), Box<dyn Error>> {
+    if check_file {
+        check_header(url).await?;
+    }
+
     info!("downloading {}", url);
     let response = reqwest::get(url).await?;
     let mut file = tokio::fs::File::create(file_path).await?;
