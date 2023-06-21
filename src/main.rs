@@ -13,8 +13,9 @@ use tokio::io::AsyncBufReadExt;
 use tokio_stream::wrappers::LinesStream;
 
 // Selon les version de KBART il y a deux types de header possible
-const KBART_HEADER : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type	date_monograph_published_print	date_monograph_published_online	monograph_volume	monograph_edition	first_editor	parent_publication_title_id	preceding_publication_title_id	access_type";
-const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type	date_monograph_published_print	date_monograph_published_online	monograph_volume	monograph_edition	first_editor	parent_publication_title_id	preceding_publication_title_id	access_type";
+const KBART_HEADER : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type";
+const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type";
+
 
 /// 🥓 KBART File harverster
 #[derive(Parser, Debug)]
@@ -39,7 +40,7 @@ enum Errors {
     #[error("The URL must have a path. The last path part is used to name the file (after sanitization)")]
     MissingPath(String),
     #[error("The kbart file must have a valid header")]
-    InvalidKbartFile,
+    InvalidKbartFile(String),
 }
 
 #[tokio::main]
@@ -84,10 +85,13 @@ async fn read_lines(
 async fn check_header(url: &str) -> Result<(), Box<dyn Error>> {
     info!("checking kbart header of {}", url);
     let mut headers = HeaderMap::new();
+    // * 2 certains providers fournissent de l'UTF-16
     headers.append(
         "Range",
-        format!("bytes=0-{}", KBART_HEADER_5321.as_bytes().len() ).parse()?,
+        format!("bytes=0-{}", KBART_HEADER_5321.bytes().count() * 2).parse()?,
     );
+
+    headers.append("Accept-Charset", "utf-8".parse()?);
 
     let request = Client::new().get(url).headers(headers).build()?;
 
@@ -95,12 +99,11 @@ async fn check_header(url: &str) -> Result<(), Box<dyn Error>> {
 
     // Si le serveur ne supporte pas le byte range il retourne l'intégralité du document.
     // On vérifie donc que le header est présent avec starts_with et non avec une égalité parfaite.
-    if !response.starts_with(KBART_HEADER) && !response.starts_with(KBART_HEADER_5321) {
-        println!("{:?}", response);
-        error!("{} has an invalid kbart header", url);
-        Err(Errors::InvalidKbartFile.into())
-    } else {
+    if response.starts_with(KBART_HEADER_5321) || response.starts_with(KBART_HEADER)  {
         Ok(())
+    } else {
+        error!("{} has an invalid kbart header", url);
+        Err(Errors::InvalidKbartFile(url.to_string()).into())
     }
 }
 
