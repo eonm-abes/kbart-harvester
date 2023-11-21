@@ -13,8 +13,8 @@ use tokio::io::AsyncBufReadExt;
 use tokio_stream::wrappers::LinesStream;
 
 // Selon les version de KBART il y a deux types de header possible
-const KBART_HEADER : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type";
-const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type";
+const KBART_HEADER : &str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type";
+const KBART_HEADER_5321 : &str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type";
 
 /// 🥓 KBART File harverster
 #[derive(Parser, Debug)]
@@ -99,7 +99,7 @@ async fn check_header(url: &str) -> Result<(), Box<dyn Error>> {
     // * 2 certains providers fournissent de l'UTF-16
     headers.append(
         "Range",
-        format!("bytes=0-{}", KBART_HEADER_5321.bytes().count() * 2).parse()?,
+        format!("bytes=0-{}", KBART_HEADER_5321.len() * 2).parse()?,
     );
 
     headers.append("Accept-Charset", "utf-8".parse()?);
@@ -136,7 +136,7 @@ async fn process<T: tokio_stream::Stream<Item = Result<String, std::io::Error>>>
     output_directory: PathBuf,
     workers: usize,
     check_validity: bool,
-) -> () {
+) {
     let fetches = stream
         .map(|line| {
             let output_directory = output_directory.clone();
