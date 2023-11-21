@@ -16,7 +16,6 @@ use tokio_stream::wrappers::LinesStream;
 const KBART_HEADER : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type";
 const KBART_HEADER_5321 : &'static str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type";
 
-
 /// 🥓 KBART File harverster
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -31,8 +30,8 @@ struct Args {
     #[arg(short, long)]
     output_dir: String,
     /// Dont check kbart file validity
-    #[arg(short,long, default_value_t = false)]
-    nocheck: bool
+    #[arg(short, long, default_value_t = false)]
+    nocheck: bool,
 }
 
 #[derive(Error, Debug)]
@@ -64,11 +63,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("reading data from stdin");
             let stdin = tokio::io::stdin();
             let reader = tokio::io::BufReader::new(stdin);
-            process(LinesStream::new(reader.lines()), output_directory, workers, check_validity).await;
+            process(
+                LinesStream::new(reader.lines()),
+                output_directory,
+                workers,
+                check_validity,
+            )
+            .await;
         }
         Some(file) => {
             let lines = read_lines(&file).await?;
-            process(LinesStream::new(lines), output_directory, workers, check_validity).await;
+            process(
+                LinesStream::new(lines),
+                output_directory,
+                workers,
+                check_validity,
+            )
+            .await;
         }
     }
 
@@ -99,7 +110,7 @@ async fn check_header(url: &str) -> Result<(), Box<dyn Error>> {
 
     // Si le serveur ne supporte pas le byte range il retourne l'intégralité du document.
     // On vérifie donc que le header est présent avec starts_with et non avec une égalité parfaite.
-    if response.starts_with(KBART_HEADER_5321) || response.starts_with(KBART_HEADER)  {
+    if response.starts_with(KBART_HEADER_5321) || response.starts_with(KBART_HEADER) {
         Ok(())
     } else {
         error!("{} has an invalid kbart header", url);
@@ -124,38 +135,38 @@ async fn process<T: tokio_stream::Stream<Item = Result<String, std::io::Error>>>
     stream: T,
     output_directory: PathBuf,
     workers: usize,
-    check_validity: bool
+    check_validity: bool,
 ) -> () {
     let fetches = stream
-    .map(|line| {
-        let output_directory = output_directory.clone();
-        async move {
-            if let Ok(line) = line {
-                if !line.is_empty() {
-                    let url: Url = Url::parse(&line)?;
-                    let url_path = url
-                        .path_segments()
-                        .ok_or(Errors::MissingPath(line.clone()))?;
+        .map(|line| {
+            let output_directory = output_directory.clone();
+            async move {
+                if let Ok(line) = line {
+                    if !line.is_empty() {
+                        let url: Url = Url::parse(&line)?;
+                        let url_path = url
+                            .path_segments()
+                            .ok_or(Errors::MissingPath(line.clone()))?;
 
-                    let filename = url_path
-                        .last()
-                        .and_then(|path| if path.is_empty() { None } else { Some(path) })
-                        .map(sanitize_filename::sanitize)
-                        .map(|filename| output_directory.join(filename))
-                        .ok_or(Errors::MissingPath(line.clone()))?;
+                        let filename = url_path
+                            .last()
+                            .and_then(|path| if path.is_empty() { None } else { Some(path) })
+                            .map(sanitize_filename::sanitize)
+                            .map(|filename| output_directory.join(filename))
+                            .ok_or(Errors::MissingPath(line.clone()))?;
 
-                    download(&line, filename, check_validity).await?;
+                        download(&line, filename, check_validity).await?;
+                    }
                 }
+                Ok(())
             }
-            Ok(())
-        }
-    })
-    .buffer_unordered(workers)
-    .collect::<Vec<Result<(), Box<dyn Error>>>>();
+        })
+        .buffer_unordered(workers)
+        .collect::<Vec<Result<(), Box<dyn Error>>>>();
 
-for elem in fetches.await {
-    if let Err(error) = elem {
-        error!("{}", error)
+    for elem in fetches.await {
+        if let Err(error) = elem {
+            error!("{}", error)
+        }
     }
-}
 }
