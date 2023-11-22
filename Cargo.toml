@@ -2,7 +2,7 @@
 name = "kbart-harvester"
 version = "0.1.0"
 edition = "2021"
-authors = "Mathis EON <eon@abes.fr>"
+authors = ["Mathis EON <eon@abes.fr>"]
 
 [profile.release]
 opt-level = 3
