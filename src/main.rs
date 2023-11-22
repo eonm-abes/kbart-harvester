@@ -16,7 +16,7 @@ use tokio_stream::wrappers::LinesStream;
 const KBART_HEADER : &str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	notes	publisher_name	publication_type";
 const KBART_HEADER_5321 : &str = "publication_title	print_identifier	online_identifier	date_first_issue_online	num_first_vol_online	num_first_issue_online	date_last_issue_online	num_last_vol_online	num_last_issue_online	title_url	first_author	title_id	embargo_info	coverage_depth	coverage_notes	publisher_name	publication_type";
 
-/// 🥓 KBART File harverster
+/// 🥓 KBART Harverster
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
