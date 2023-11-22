@@ -7,7 +7,7 @@
 ## Installation
 
 ````sh
-git clone && cd kbart-harvester
+git clone https://github.com/eonm-abes/kbart-harvester && cd kbart-harvester
 cargo install -p .
 ````
 
