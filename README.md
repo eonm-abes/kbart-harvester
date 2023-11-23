@@ -34,4 +34,4 @@ By default, KBART Harverster checks the validity of a KBART file before fully do
 
 Files are automatically named based on the last path in the URL.The name is sanitised for security reasons.If the URL doesn't have a path, an error is returned.
 
-**⚠️  If the file already exists, it's contents will be overridden.**
+**⚠️  If the file already exists, it's contents will be overwritten.**
