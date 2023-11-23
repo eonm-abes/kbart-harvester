@@ -28,7 +28,7 @@ cat urls_list.txt | kbart-harverster -o kbarts
 
 ## KBART validity check
 
-By default, KBART Harverster checks the validity of a KBART file before fully downloading it. The check consists of comparing the first bytes of the KBART file with a valid header. Only the first columns of the header are compared beacause : some editors add their own columns at the end of the file) ; last headers have subtle differences between KBART versions.
+By default, KBART Harverster checks the validity of a KBART file before fully downloading it. The check consists of comparing the first bytes of the KBART file with a valid header. Only the first columns of the header are compared beacause : some editors add their own columns at the end of the file ; last headers have subtle differences between KBART versions.
 
 ## File naming
 
